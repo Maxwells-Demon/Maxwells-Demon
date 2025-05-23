@@ -264,7 +264,7 @@
 
     <script>
         // Replace with your actual OAuth 2.0 Client ID from Google Cloud Console
-        const CLIENT_ID = '322612768318-80h32spe5u74600u5b27tsqnd9772u7j.apps.googleusercontent.com';
+        const CLIENT_ID = 'YOUR_CLIENT_ID_HERE.apps.googleusercontent.com';
         const DISCOVERY_DOC = 'https://photoslibrary.googleapis.com/$discovery/rest';
         const SCOPES = 'https://www.googleapis.com/auth/photoslibrary.readonly';
 
@@ -568,4 +568,58 @@
                     if (item.mediaMetadata && item.mediaMetadata.creationTime) {
                         date.textContent = new Date(item.mediaMetadata.creationTime).toLocaleDateString();
                     }
-                  
+                    
+                    info.appendChild(title);
+                    info.appendChild(date);
+                    photoDiv.appendChild(img);
+                    photoDiv.appendChild(info);
+                    grid.appendChild(photoDiv);
+                }
+            });
+            
+            container.innerHTML = '';
+            container.appendChild(grid);
+        }
+
+        // Modal functions
+        function openModal(imageSrc) {
+            const modal = document.getElementById('photoModal');
+            const modalImg = document.getElementById('modalImage');
+            modal.style.display = 'block';
+            modalImg.src = imageSrc;
+        }
+
+        function closeModal() {
+            document.getElementById('photoModal').style.display = 'none';
+        }
+
+        // Utility function to show status messages
+        function showStatus(message, type) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.className = `status ${type}`;
+            statusDiv.textContent = message;
+            statusDiv.style.display = 'block';
+            
+            // Auto-hide success messages after 3 seconds
+            if (type === 'success') {
+                setTimeout(() => {
+                    statusDiv.style.display = 'none';
+                }, 3000);
+            }
+        }
+
+        // Close modal when clicking outside the image
+        window.onclick = function(event) {
+            const modal = document.getElementById('photoModal');
+            if (event.target === modal) {
+                closeModal();
+            }
+        }
+
+        // Initialize when the page loads
+        window.onload = function() {
+            initializeGapi();
+        };
+    </script>
+</body>
+</html>
