@@ -254,7 +254,6 @@
         <div id="photosContainer"></div>
     </div>
 
-    <!-- Modal for full-size image viewing -->
     <div id="photoModal" class="modal">
         <span class="close" onclick="closeModal()">&times;</span>
         <div class="modal-content">
@@ -274,95 +273,30 @@
         let albums = [];
         let selectedAlbumId = '';
 
-        // Load Google API scripts dynamically with fallbacks
+        // Load Google API scripts dynamically
         function loadGoogleAPIs() {
             return new Promise((resolve, reject) => {
-                let gapiLoaded = false;
-                let gisLoaded = false;
-                
-                function checkCompletion() {
-                    if (gapiLoaded && gisLoaded) {
-                        resolve();
-                    }
-                }
-                
-                // Load Google API script with multiple attempts
-                function loadGapi(attempt = 1) {
-                    const gapiScript = document.createElement('script');
-                    const gapiUrls = [
-                        'https://apis.google.com/js/api.js',
-                        //'https://cdnjs.cloudflare.com/ajax/libs/google-api-javascript-client/2.2.2/gapi.min.js'
-                    ];
-                    
-                    gapiScript.src = gapiUrls[attempt - 1] || gapiUrls[0];
-                    
-                    gapiScript.onload = () => {
-                        // Wait for gapi to be available
-                        const checkGapi = setInterval(() => {
-                            if (typeof gapi !== 'undefined') {
-                                clearInterval(checkGapi);
-                                gapiLoaded = true;
-                                checkCompletion();
-                            }
-                        }, 100);
-                        
-                        // Timeout after 5 seconds
-                        setTimeout(() => {
-                            clearInterval(checkGapi);
-                            if (!gapiLoaded && attempt < 2) {
-                                document.head.removeChild(gapiScript);
-                                loadGapi(attempt + 1);
-                            } else if (!gapiLoaded) {
-                                reject(new Error('GAPI not available after loading'));
-                            }
-                        }, 5000);
-                    };
-                    
-                    gapiScript.onerror = () => {
-                        if (attempt < 2) {
-                            loadGapi(attempt + 1);
-                        } else {
-                            reject(new Error('Failed to load Google API script'));
-                        }
-                    };
-                    
-                    document.head.appendChild(gapiScript);
-                }
-                
-                // Load Google Identity Services script
-                function loadGIS() {
-                    const gisScript = document.createElement('script');
-                    gisScript.src = 'https://accounts.google.com/gsi/client';
-                    
-                    gisScript.onload = () => {
-                        // Wait for google accounts to be available
-                        const checkGIS = setInterval(() => {
-                            if (typeof google !== 'undefined' && google.accounts) {
-                                clearInterval(checkGIS);
-                                gisLoaded = true;
-                                checkCompletion();
-                            }
-                        }, 100);
-                        
-                        // Timeout after 5 seconds
-                        setTimeout(() => {
-                            clearInterval(checkGIS);
-                            if (!gisLoaded) {
-                                reject(new Error('Google Identity Services not available after loading'));
-                            }
-                        }, 5000);
-                    };
-                    
-                    gisScript.onerror = () => {
-                        reject(new Error('Failed to load Google Identity Services'));
-                    };
-                    
-                    document.head.appendChild(gisScript);
-                }
-                
-                // Start loading both scripts
-                loadGapi();
-                loadGIS();
+                const scriptGapi = document.createElement('script');
+                scriptGapi.src = 'https://apis.google.com/js/api.js';
+                scriptGapi.async = true;
+                scriptGapi.defer = true;
+                scriptGapi.onload = () => {
+                    gapiLoaded = true;
+                    resolve();
+                };
+                scriptGapi.onerror = () => reject(new Error('Failed to load Google API script'));
+                document.head.appendChild(scriptGapi);
+
+                const scriptGis = document.createElement('script');
+                scriptGis.src = 'https://accounts.google.com/gsi/client';
+                scriptGis.async = true;
+                scriptGis.defer = true;
+                scriptGis.onload = () => {
+                    gisLoaded = true;
+                    resolve();
+                };
+                scriptGis.onerror = () => reject(new Error('Failed to load Google Identity Services'));
+                document.head.appendChild(scriptGis);
             });
         }
 
@@ -377,30 +311,51 @@
                 showStatus('🔄 Loading Google APIs...', 'info');
                 
                 // Load the scripts
-                await loadGoogleAPIs();
-                
-                showStatus('🔄 Initializing Google Client...', 'info');
-
-                // Initialize gapi client
                 await new Promise((resolve, reject) => {
-                    gapi.load('client', {
-                        callback: async () => {
+                    const scriptGapi = document.createElement('script');
+                    scriptGapi.src = 'https://apis.google.com/js/api.js';
+                    scriptGapi.async = true;
+                    scriptGapi.defer = true;
+                    scriptGapi.onload = () => {
+                        gapi.load('client', async () => {
                             try {
-                                await gapi.client.init({});
+                                await gapi.client.init({
+                                    // No API key needed for OAuth requests
+                                });
                                 resolve();
                             } catch (error) {
-                                reject(error);
+                                reject(new Error('gapi.client.init failed: ' + error.message));
                             }
-                        },
-                        onerror: reject
-                    });
+                        });
+                    };
+                    scriptGapi.onerror = () => reject(new Error('Failed to load Google API script (api.js)'));
+                    document.head.appendChild(scriptGapi);
+
+                    const scriptGis = document.createElement('script');
+                    scriptGis.src = 'https://accounts.google.com/gsi/client';
+                    scriptGis.async = true;
+                    scriptGis.defer = true;
+                    scriptGis.onload = () => {
+                        // GIS (google.accounts) is typically ready once the script loads
+                        // We don't need a specific 'load' callback for google.accounts itself here,
+                        // just ensure the script loaded
+                        resolve(); 
+                    };
+                    scriptGis.onerror = () => reject(new Error('Failed to load Google Identity Services (gsi/client)'));
+                    document.head.appendChild(scriptGis);
                 });
+                
+                showStatus('🔄 Initializing Google Client...', 'info');
 
                 // Initialize Google Identity Services
                 tokenClient = google.accounts.oauth2.initTokenClient({
                     client_id: CLIENT_ID,
                     scope: SCOPES,
                     callback: tokenCallback,
+                    error_callback: (error) => {
+                        showStatus('GIS Initialization Error: ' + error.message, 'error');
+                        console.error('GIS Error:', error);
+                    }
                 });
 
                 showStatus('✅ Google API initialized successfully! You can now sign in.', 'success');
@@ -434,7 +389,13 @@
             }
 
             accessToken = response.access_token;
-            gapi.client.setToken({ access_token: accessToken });
+            // Set the token for gapi.client after successful authentication
+            if (gapi && gapi.client) {
+                gapi.client.setToken({ access_token: accessToken });
+            } else {
+                showStatus('GAPI client not fully initialized for token setting.', 'error');
+                console.warn('GAPI client not available when trying to set token.');
+            }
             
             document.getElementById('authBtn').style.display = 'none';
             document.getElementById('signOutBtn').style.display = 'inline-block';
@@ -445,7 +406,17 @@
 
         // Sign out
         function signOut() {
-            gapi.client.setToken(null);
+            // Revoke token for GIS if available
+            if (google.accounts.oauth2.revoke && accessToken) {
+                google.accounts.oauth2.revoke(accessToken, () => {
+                    console.log('Token revoked');
+                });
+            }
+            // Clear gapi client token
+            if (gapi && gapi.client) {
+                 gapi.client.setToken(null);
+            }
+           
             accessToken = '';
             document.getElementById('authBtn').style.display = 'inline-block';
             document.getElementById('signOutBtn').style.display = 'none';
