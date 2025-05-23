@@ -262,7 +262,8 @@
         </div>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/google-auth-library/9.14.1/index.min.js"></script>
+    <script src="https://apis.google.com/js/api.js"></script>
+    <script src="https://accounts.google.com/gsi/client"></script>
     <script>
         // Replace with your actual OAuth 2.0 Client ID from Google Cloud Console
         const CLIENT_ID = '322612768318-80h32spe5u74600u5b27tsqnd9772u7j.apps.googleusercontent.com';
@@ -276,37 +277,43 @@
         let selectedAlbumId = '';
 
         // Initialize the Google API
-        async function initializeGapi() {
+        function initializeGapi() {
             if (CLIENT_ID === 'YOUR_CLIENT_ID_HERE.apps.googleusercontent.com') {
                 showStatus('Please replace CLIENT_ID with your actual Google OAuth Client ID', 'error');
                 return;
             }
 
+            // Check if gapi is available
+            if (typeof gapi === 'undefined') {
+                showStatus('Google API library not loaded. Please refresh the page.', 'error');
+                return;
+            }
+
             try {
-                await new Promise((resolve, reject) => {
-                    gapi = window.gapi;
-                    gapi.load('client', async () => {
-                        try {
-                            await gapi.client.init({
-                                discoveryDocs: [DISCOVERY_DOC],
+                gapi.load('client', async () => {
+                    try {
+                        await gapi.client.init({
+                            apiKey: '', // API key not required for OAuth flow
+                            discoveryDocs: [DISCOVERY_DOC],
+                        });
+
+                        // Initialize Google Identity Services
+                        if (typeof google !== 'undefined' && google.accounts) {
+                            tokenClient = google.accounts.oauth2.initTokenClient({
+                                client_id: CLIENT_ID,
+                                scope: SCOPES,
+                                callback: tokenCallback,
                             });
-                            resolve();
-                        } catch (error) {
-                            reject(error);
+                            showStatus('Google API initialized successfully', 'success');
+                        } else {
+                            showStatus('Google Identity Services not loaded', 'error');
                         }
-                    });
+                    } catch (error) {
+                        showStatus('Failed to initialize Google client: ' + error.message, 'error');
+                    }
                 });
-
-                // Initialize Google Identity Services
-                tokenClient = google.accounts.oauth2.initTokenClient({
-                    client_id: CLIENT_ID,
-                    scope: SCOPES,
-                    callback: tokenCallback,
-                });
-
-                showStatus('Google API initialized successfully', 'success');
             } catch (error) {
-                showStatus('Failed to initialize Google API: ' + error.message, 'error');
+                showStatus('Failed to load Google API client: ' + error.message, 'error');
             }
         }
 
@@ -511,11 +518,10 @@
 
         // Initialize when the page loads
         window.onload = function() {
-            // Load Google Identity Services
-            const script = document.createElement('script');
-            script.src = 'https://accounts.google.com/gsi/client';
-            script.onload = initializeGapi;
-            document.head.appendChild(script);
+            // Wait a bit for all scripts to load, then initialize
+            setTimeout(() => {
+                initializeGapi();
+            }, 500);
         };
     </script>
 </body>
