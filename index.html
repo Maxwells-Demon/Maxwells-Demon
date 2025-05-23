@@ -274,68 +274,125 @@
         let albums = [];
         let selectedAlbumId = '';
 
-        // Load Google API scripts dynamically
+        // Load Google API scripts dynamically with fallbacks
         function loadGoogleAPIs() {
             return new Promise((resolve, reject) => {
-                // Load Google API script
-                const gapiScript = document.createElement('script');
-                gapiScript.src = 'https://apis.google.com/js/api.js';
-                gapiScript.onload = () => {
-                    // Load Google Identity Services script
+                let gapiLoaded = false;
+                let gisLoaded = false;
+                
+                function checkCompletion() {
+                    if (gapiLoaded && gisLoaded) {
+                        resolve();
+                    }
+                }
+                
+                // Load Google API script with multiple attempts
+                function loadGapi(attempt = 1) {
+                    const gapiScript = document.createElement('script');
+                    const gapiUrls = [
+                        'https://apis.google.com/js/api.js',
+                        'https://cdnjs.cloudflare.com/ajax/libs/google-api-javascript-client/2.2.2/gapi.min.js'
+                    ];
+                    
+                    gapiScript.src = gapiUrls[attempt - 1] || gapiUrls[0];
+                    
+                    gapiScript.onload = () => {
+                        // Wait for gapi to be available
+                        const checkGapi = setInterval(() => {
+                            if (typeof gapi !== 'undefined') {
+                                clearInterval(checkGapi);
+                                gapiLoaded = true;
+                                checkCompletion();
+                            }
+                        }, 100);
+                        
+                        // Timeout after 5 seconds
+                        setTimeout(() => {
+                            clearInterval(checkGapi);
+                            if (!gapiLoaded && attempt < 2) {
+                                document.head.removeChild(gapiScript);
+                                loadGapi(attempt + 1);
+                            } else if (!gapiLoaded) {
+                                reject(new Error('GAPI not available after loading'));
+                            }
+                        }, 5000);
+                    };
+                    
+                    gapiScript.onerror = () => {
+                        if (attempt < 2) {
+                            loadGapi(attempt + 1);
+                        } else {
+                            reject(new Error('Failed to load Google API script'));
+                        }
+                    };
+                    
+                    document.head.appendChild(gapiScript);
+                }
+                
+                // Load Google Identity Services script
+                function loadGIS() {
                     const gisScript = document.createElement('script');
                     gisScript.src = 'https://accounts.google.com/gsi/client';
+                    
                     gisScript.onload = () => {
-                        resolve();
+                        // Wait for google accounts to be available
+                        const checkGIS = setInterval(() => {
+                            if (typeof google !== 'undefined' && google.accounts) {
+                                clearInterval(checkGIS);
+                                gisLoaded = true;
+                                checkCompletion();
+                            }
+                        }, 100);
+                        
+                        // Timeout after 5 seconds
+                        setTimeout(() => {
+                            clearInterval(checkGIS);
+                            if (!gisLoaded) {
+                                reject(new Error('Google Identity Services not available after loading'));
+                            }
+                        }, 5000);
                     };
+                    
                     gisScript.onerror = () => {
                         reject(new Error('Failed to load Google Identity Services'));
                     };
+                    
                     document.head.appendChild(gisScript);
-                };
-                gapiScript.onerror = () => {
-                    reject(new Error('Failed to load Google API'));
-                };
-                document.head.appendChild(gapiScript);
+                }
+                
+                // Start loading both scripts
+                loadGapi();
+                loadGIS();
             });
         }
 
         // Initialize the Google API
         async function initializeGapi() {
             if (CLIENT_ID === 'YOUR_CLIENT_ID_HERE.apps.googleusercontent.com') {
-                showStatus('Please replace CLIENT_ID with your actual Google OAuth Client ID', 'error');
+                showStatus('⚠️ Setup Required: Please replace CLIENT_ID with your actual Google OAuth Client ID from Google Cloud Console', 'error');
                 return;
             }
 
             try {
-                showStatus('Loading Google APIs...', 'info');
+                showStatus('🔄 Loading Google APIs...', 'info');
                 
-                // Load the scripts first
+                // Load the scripts
                 await loadGoogleAPIs();
                 
-                // Wait a bit more for scripts to be ready
-                await new Promise(resolve => setTimeout(resolve, 1000));
-
-                // Check if gapi is available
-                if (typeof gapi === 'undefined') {
-                    throw new Error('Google API (gapi) not available after loading');
-                }
-
-                // Check if google identity services is available
-                if (typeof google === 'undefined' || !google.accounts) {
-                    throw new Error('Google Identity Services not available after loading');
-                }
+                showStatus('🔄 Initializing Google Client...', 'info');
 
                 // Initialize gapi client
                 await new Promise((resolve, reject) => {
-                    gapi.load('client', async () => {
-                        try {
-                            await gapi.client.init({
-                                // Note: For Photos API, we don't need an API key, OAuth is sufficient
-                            });
-                            resolve();
-                        } catch (error) {
-                            reject(error);
-                        }
+                    gapi.load('client', {
+                        callback: async () => {
+                            try {
+                                await gapi.client.init({});
+                                resolve();
+                            } catch (error) {
+                                reject(error);
+                            }
+                        },
+                        onerror: reject
                     });
                 });
 
@@ -346,11 +403,17 @@
                     callback: tokenCallback,
                 });
 
-                showStatus('Google API initialized successfully! You can now sign in.', 'success');
+                showStatus('✅ Google API initialized successfully! You can now sign in.', 'success');
                 
             } catch (error) {
-                showStatus('Failed to initialize Google API: ' + error.message, 'error');
-                console.error('Initialization error:', error);
+                showStatus('❌ Failed to initialize Google API: ' + error.message, 'error');
+                console.error('Detailed error:', error);
+                
+                // Provide troubleshooting info
+                console.log('Troubleshooting info:');
+                console.log('- gapi available:', typeof gapi !== 'undefined');
+                console.log('- google available:', typeof google !== 'undefined');
+                console.log('- google.accounts available:', typeof google !== 'undefined' && !!google.accounts);
             }
         }
 
@@ -505,58 +568,4 @@
                     if (item.mediaMetadata && item.mediaMetadata.creationTime) {
                         date.textContent = new Date(item.mediaMetadata.creationTime).toLocaleDateString();
                     }
-                    
-                    info.appendChild(title);
-                    info.appendChild(date);
-                    photoDiv.appendChild(img);
-                    photoDiv.appendChild(info);
-                    grid.appendChild(photoDiv);
-                }
-            });
-            
-            container.innerHTML = '';
-            container.appendChild(grid);
-        }
-
-        // Modal functions
-        function openModal(imageSrc) {
-            const modal = document.getElementById('photoModal');
-            const modalImg = document.getElementById('modalImage');
-            modal.style.display = 'block';
-            modalImg.src = imageSrc;
-        }
-
-        function closeModal() {
-            document.getElementById('photoModal').style.display = 'none';
-        }
-
-        // Utility function to show status messages
-        function showStatus(message, type) {
-            const statusDiv = document.getElementById('status');
-            statusDiv.className = `status ${type}`;
-            statusDiv.textContent = message;
-            statusDiv.style.display = 'block';
-            
-            // Auto-hide success messages after 3 seconds
-            if (type === 'success') {
-                setTimeout(() => {
-                    statusDiv.style.display = 'none';
-                }, 3000);
-            }
-        }
-
-        // Close modal when clicking outside the image
-        window.onclick = function(event) {
-            const modal = document.getElementById('photoModal');
-            if (event.target === modal) {
-                closeModal();
-            }
-        }
-
-        // Initialize when the page loads
-        window.onload = function() {
-            initializeGapi();
-        };
-    </script>
-</body>
-</html>
+                  
